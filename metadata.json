@@ -1,0 +1,6 @@
+{
+  "name": "Cue",
+  "description": "Personal life-direction companion for Sparks to overcome decision fatigue and choose what to do right now.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
