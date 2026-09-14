@@ -1,20 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Navigation } from './components/Navigation.jsx';
 import { HomePage } from './pages/HomePage.jsx';
 import { TrainCuePage } from './pages/TrainCuePage.jsx';
 import { WhatShouldIDoPage } from './pages/WhatShouldIDoPage.jsx';
-import { UpNextPage } from './pages/UpNextPage.jsx';
+import { MyPlanPage } from './pages/MyPlanPage.jsx';
 import { ExplorePage } from './pages/ExplorePage.jsx';
 import { ProjectsPage } from './pages/ProjectsPage.jsx';
 import { ReflectPage } from './pages/ReflectPage.jsx';
 import { MyCuePage } from './pages/MyCuePage.jsx';
 import { ActivityDetailPage } from './pages/ActivityDetailPage.jsx';
 import { CreateActivityPage } from './pages/CreateActivityPage.jsx';
+import { LoginPage } from './pages/LoginPage.jsx';
 import { CompletionModal } from './components/CompletionModal.jsx';
 import { AiAssistantModal } from './components/AiAssistantModal.jsx';
 import { StorageService } from './services/storage.js';
+import { AuthService } from './services/auth.js';
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState(() => AuthService.getCurrentUser());
   const [activeTab, setActiveTab] = useState('home');
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [isCreatingActivity, setIsCreatingActivity] = useState(false);
@@ -30,6 +33,12 @@ export default function App() {
   // Toast alert
   const [toastMessage, setToastMessage] = useState(null);
 
+  useEffect(() => {
+    return AuthService.subscribe((user) => {
+      setCurrentUser(user);
+    });
+  }, []);
+
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
@@ -41,11 +50,11 @@ export default function App() {
   };
 
   const handleCommitActivity = (activity) => {
-    StorageService.setSelectedPlan(activity);
-    showToast(`Saved "${activity.name}" to Up Next! ✨`);
+    StorageService.addPlan(activity);
+    showToast(`Saved "${activity.name}" to My Plan! ✨`);
     setSelectedActivity(null);
     setIsCreatingActivity(false);
-    setActiveTab('up_next');
+    setActiveTab('my_plan');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -55,19 +64,22 @@ export default function App() {
   };
 
   const handleCompleteActivity = (status, feedback, notes) => {
-    const selected = StorageService.getSelectedPlan();
-    const actName = completionTargetName || selected?.activity?.name || 'Activity';
-    const actId = selected?.activityId || 'activity-done';
+    const plans = StorageService.getPlans();
+    const active = plans.find((p) => p.status === 'in_progress') || plans.find((p) => p.status === 'pending');
+    const actName = completionTargetName || active?.activity?.name || 'Activity';
 
-    StorageService.recordLog({
-      activityId: actId,
-      activityName: actName,
-      status,
-      feedback,
-      notes,
-    });
+    if (active) {
+      StorageService.completePlan(active.id, { feedback, notes });
+    } else {
+      StorageService.recordLog({
+        activityId: 'activity-done',
+        activityName: actName,
+        status,
+        feedback,
+        notes,
+      });
+    }
 
-    StorageService.clearSelectedPlan();
     setIsCompletionModalOpen(false);
 
     if (status === 'done') {
@@ -75,24 +87,6 @@ export default function App() {
     } else {
       showToast(`Checked in on "${actName}". Good decision!`);
     }
-  };
-
-  const handleStartProject = (activity) => {
-    StorageService.addProject({
-      title: `${activity.name} Project`,
-      description: `Focused project inspired by ${activity.name}.`,
-      tangibleOutcome: activity.leavesSomethingBehind ? 'Finished piece or work' : 'Skill mastery',
-      currentStep: 'Plan initial materials & outline',
-      steps: [
-        { id: `s-${Date.now()}-1`, text: 'Plan initial materials & outline', completed: false },
-        { id: `s-${Date.now()}-2`, text: 'First execution session', completed: false },
-        { id: `s-${Date.now()}-3`, text: 'Refine and finish artifact', completed: false },
-      ],
-      status: 'in_progress',
-    });
-    setSelectedActivity(null);
-    setActiveTab('projects');
-    showToast(`Started new project for "${activity.name}"!`);
   };
 
   const handleLaunchWithIntent = (intentId) => {
@@ -103,11 +97,21 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleLogout = () => {
+    AuthService.logout();
+    setCurrentUser(null);
+  };
+
+  // If no user session, show honest login page
+  if (!currentUser) {
+    return <LoginPage onLoginSuccess={(user) => setCurrentUser(user)} />;
+  }
+
   return (
     <div className="min-h-screen bg-[#FFFDFE] text-[#2D262A] flex flex-col font-sans selection:bg-[#FFD1E3] selection:text-[#9F1239]">
       {/* Navigation Header */}
       <Navigation
-        activeTab={activeTab}
+        activeTab={activeTab === 'up_next' ? 'my_plan' : activeTab}
         onTabChange={(tab) => {
           setSelectedActivity(null);
           setIsCreatingActivity(false);
@@ -115,6 +119,8 @@ export default function App() {
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
         onOpenAiCompanion={() => setIsAiModalOpen(true)}
+        currentUser={currentUser}
+        onLogout={handleLogout}
       />
 
       {/* Ephemeral Toast Notification */}
@@ -136,7 +142,7 @@ export default function App() {
             onCommit={handleCommitActivity}
             onNavigateToUpNext={() => {
               setSelectedActivity(null);
-              setActiveTab('up_next');
+              setActiveTab('my_plan');
             }}
           />
         ) : isCreatingActivity ? (
@@ -155,7 +161,7 @@ export default function App() {
                 onNavigate={(tab) => {
                   setSelectedActivity(null);
                   setIsCreatingActivity(false);
-                  setActiveTab(tab);
+                  setActiveTab(tab === 'up_next' ? 'my_plan' : tab);
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 onSelectActivity={handleSelectActivity}
@@ -165,12 +171,12 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'up_next' && (
-              <UpNextPage
+            {(activeTab === 'my_plan' || activeTab === 'up_next') && (
+              <MyPlanPage
                 onNavigate={(tab) => {
                   setSelectedActivity(null);
                   setIsCreatingActivity(false);
-                  setActiveTab(tab);
+                  setActiveTab(tab === 'up_next' ? 'my_plan' : tab);
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 onSelectActivity={handleSelectActivity}

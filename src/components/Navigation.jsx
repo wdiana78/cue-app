@@ -8,30 +8,36 @@ import {
   PenTool,
   User,
   MessageCircle,
-  Play,
+  Calendar,
+  LogOut,
 } from 'lucide-react';
 import { StorageService } from '../services/storage.js';
+import { AuthService } from '../services/auth.js';
 
 export const Navigation = ({
   activeTab,
   onTabChange,
   onOpenAiCompanion,
+  currentUser,
+  onLogout,
 }) => {
-  const [selectedPlan, setSelectedPlan] = useState(null);
+  const [plans, setPlans] = useState([]);
 
-  const loadPlan = () => {
-    setSelectedPlan(StorageService.getSelectedPlan());
+  const loadPlans = () => {
+    setPlans(StorageService.getPlans());
   };
 
   useEffect(() => {
-    loadPlan();
-    return StorageService.subscribe(loadPlan);
+    loadPlans();
+    return StorageService.subscribe(loadPlans);
   }, []);
+
+  const activePlansCount = plans.filter((p) => p.status === 'pending' || p.status === 'in_progress').length;
 
   const navItems = [
     { id: 'home', label: 'Home', icon: Compass },
     { id: 'recommend', label: 'What Should I Do?', icon: Sparkles },
-    { id: 'up_next', label: 'Up Next', icon: Play, hasBadge: Boolean(selectedPlan) },
+    { id: 'my_plan', label: 'My Plan', icon: Calendar, badgeCount: activePlansCount },
     { id: 'explore', label: 'My Life', icon: BookOpen },
     { id: 'train', label: 'Train My Cue', icon: Flame },
     { id: 'projects', label: 'Projects', icon: FolderKanban },
@@ -57,7 +63,7 @@ export const Navigation = ({
               Cue
             </span>
             <span className="hidden sm:inline-block ml-2 text-[11px] font-semibold text-[#8A7983]">
-              for Sparks
+              for {currentUser?.name || 'Sparks'}
             </span>
           </div>
         </button>
@@ -81,8 +87,10 @@ export const Navigation = ({
               >
                 <Icon className="w-3.5 h-3.5" />
                 <span>{item.label}</span>
-                {item.hasBadge && (
-                  <span className="w-2 h-2 rounded-full bg-[#FF2E79] animate-pulse"></span>
+                {item.badgeCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-[#FF2E79] text-white text-[10px] font-black leading-none">
+                    {item.badgeCount}
+                  </span>
                 )}
               </button>
             );
@@ -108,15 +116,15 @@ export const Navigation = ({
               >
                 <Icon className="w-3.5 h-3.5" />
                 <span>{item.label === 'What Should I Do?' ? 'Decide' : item.label}</span>
-                {item.hasBadge && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#FF2E79]"></span>
+                {item.badgeCount > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-[#FF2E79]"></span>
                 )}
               </button>
             );
           })}
         </nav>
 
-        {/* Ask Cue Button */}
+        {/* Right Header Controls: Ask Cue & Profile / Logout */}
         <div className="flex items-center gap-2">
           <button
             id="nav-ask-cue-btn"
@@ -127,41 +135,41 @@ export const Navigation = ({
             <MessageCircle className="w-3.5 h-3.5 text-[#FF2E79]" />
             <span>Ask Cue</span>
           </button>
+
+          {onLogout && (
+            <button
+              id="nav-logout-btn"
+              type="button"
+              onClick={onLogout}
+              className="p-2 rounded-xl text-[#8A7983] hover:text-[#21181D] hover:bg-[#F5EDF0] transition-colors cursor-pointer"
+              title="Sign Out / Switch Session"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
       {/* Mobile Bottom Navigation Bar */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#F5E6EC] px-2 py-1.5 flex items-center justify-around">
-        {navItems.map((item) => {
+        {navItems.slice(0, 5).map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
           return (
             <button
               key={item.id}
-              id={`mobile-nav-${item.id}`}
+              id={`nav-mobile-${item.id}`}
               type="button"
               onClick={() => onTabChange(item.id)}
-              className={`flex flex-col items-center justify-center p-1.5 rounded-xl min-w-[40px] cursor-pointer transition-colors relative ${
+              className={`flex flex-col items-center py-1 px-2 rounded-lg text-[10px] font-bold transition-all relative ${
                 isActive ? 'text-[#FF2E79]' : 'text-[#8A7983]'
               }`}
             >
-              <div className="relative">
-                <Icon className="w-4 h-4 mb-0.5" />
-                {item.hasBadge && (
-                  <span className="absolute -top-0.5 -right-1 w-2 h-2 rounded-full bg-[#FF2E79]"></span>
-                )}
-              </div>
-              <span className="text-[9px] font-bold truncate max-w-[50px]">
-                {item.id === 'recommend'
-                  ? 'Decide'
-                  : item.id === 'explore'
-                  ? 'Life'
-                  : item.id === 'up_next'
-                  ? 'Up Next'
-                  : item.id === 'train'
-                  ? 'Train'
-                  : item.label}
-              </span>
+              <Icon className="w-4 h-4 mb-0.5" />
+              <span>{item.label === 'What Should I Do?' ? 'Decide' : item.label}</span>
+              {item.badgeCount > 0 && (
+                <span className="absolute top-1 right-2 w-2 h-2 rounded-full bg-[#FF2E79]"></span>
+              )}
             </button>
           );
         })}

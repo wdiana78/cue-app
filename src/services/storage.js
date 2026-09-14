@@ -9,6 +9,7 @@ const STORAGE_KEYS = {
   REFLECTIONS: 'cue_reflections_v3',
   ACTIVE_COMMITMENT: 'cue_active_commitment_v3',
   SELECTED_PLAN: 'cue_selected_plan_v4',
+  PLANS_LIST: 'cue_plans_list_v5',
   OLLAMA_CONFIG: 'cue_ollama_config_v3',
 };
 
@@ -307,25 +308,63 @@ export const StorageService = {
   },
 
   // ----------------------------------------------------
-  // UP NEXT / MY PLAN ("Sparks' Chosen Activity Flow")
+  // MY PLAN ("Sparks' Chosen Activity Flow: Pending, In Progress, Completed")
   // ----------------------------------------------------
-  getSelectedPlan() {
+  getPlans() {
     try {
-      const raw = safeStorage.getItem(STORAGE_KEYS.SELECTED_PLAN);
-      if (!raw) return null;
-      const plan = JSON.parse(raw);
-      if (!plan || !plan.activityId) return null;
-      const freshActivity = this.getActivityById(plan.activityId) || plan.activity;
-      return {
-        ...plan,
-        activity: freshActivity,
-      };
+      const raw = safeStorage.getItem(STORAGE_KEYS.PLANS_LIST);
+      let list = [];
+      if (raw) {
+        list = JSON.parse(raw);
+      } else {
+        // Check if there is an existing single plan from legacy storage
+        const legacy = safeStorage.getItem(STORAGE_KEYS.SELECTED_PLAN);
+        if (legacy) {
+          const parsed = JSON.parse(legacy);
+          if (parsed && parsed.activityId) {
+            const fresh = this.getActivityById(parsed.activityId) || parsed.activity;
+            list = [{
+              ...parsed,
+              activity: fresh,
+              status: parsed.status === 'in_progress' ? 'in_progress' : 'pending',
+            }];
+            safeStorage.setItem(STORAGE_KEYS.PLANS_LIST, JSON.stringify(list));
+          }
+        }
+      }
+
+      // Ensure fresh activity data and backward-compatibility
+      return list.map((p) => {
+        const fresh = this.getActivityById(p.activityId) || p.activity;
+        return {
+          ...p,
+          status: p.status === 'selected' ? 'pending' : (p.status || 'pending'),
+          activity: fresh,
+        };
+      });
     } catch {
-      return null;
+      return [];
     }
   },
 
-  setSelectedPlan(activity, targetTime = null) {
+  savePlans(plans) {
+    safeStorage.setItem(STORAGE_KEYS.PLANS_LIST, JSON.stringify(plans));
+    // Keep legacy single SELECTED_PLAN in sync for any quick readers
+    const active = plans.find((p) => p.status === 'in_progress') || plans.find((p) => p.status === 'pending');
+    if (active) {
+      safeStorage.setItem(STORAGE_KEYS.SELECTED_PLAN, JSON.stringify(active));
+    } else {
+      safeStorage.removeItem(STORAGE_KEYS.SELECTED_PLAN);
+    }
+    notifyListeners();
+  },
+
+  getPlanById(id) {
+    const plans = this.getPlans();
+    return plans.find((p) => p.id === id) || null;
+  },
+
+  addPlan(activity, targetTime = null) {
     if (!activity) return null;
     const act = typeof activity === 'string' ? this.getActivityById(activity) : activity;
     if (!act) return null;
@@ -333,55 +372,153 @@ export const StorageService = {
     const currentHour = new Date().getHours();
     const defaultTime = currentHour >= 18 || currentHour < 5 ? 'Tonight' : 'Today';
 
-    const plan = {
+    const currentPlans = this.getPlans();
+    // Check if this activity is already pending or in progress
+    const existing = currentPlans.find(
+      (p) => p.activityId === act.id && (p.status === 'pending' || p.status === 'in_progress')
+    );
+    if (existing) {
+      return existing;
+    }
+
+    const newPlan = {
       id: 'plan-' + Date.now(),
       activityId: act.id,
       activity: act,
       selectedAt: new Date().toISOString(),
       targetTime: targetTime || defaultTime,
-      status: 'selected', // 'selected' | 'in_progress' | 'completed'
+      status: 'pending', // 'pending' | 'in_progress' | 'completed'
       startedAt: null,
+      completedAt: null,
+      notes: '',
+      feedback: null,
     };
 
-    safeStorage.setItem(STORAGE_KEYS.SELECTED_PLAN, JSON.stringify(plan));
+    const updated = [newPlan, ...currentPlans];
+    this.savePlans(updated);
     this.setActiveCommitment(act);
-    notifyListeners();
-    return plan;
+    return newPlan;
   },
 
-  startPlan() {
-    const plan = this.getSelectedPlan();
-    if (!plan) return null;
-    const updated = {
-      ...plan,
-      status: 'in_progress',
-      startedAt: plan.startedAt || new Date().toISOString(),
-    };
-    safeStorage.setItem(STORAGE_KEYS.SELECTED_PLAN, JSON.stringify(updated));
-    notifyListeners();
-    return updated;
+  getSelectedPlan() {
+    const plans = this.getPlans();
+    // Prefer in_progress, then first pending
+    const inProgress = plans.find((p) => p.status === 'in_progress');
+    if (inProgress) return inProgress;
+    const pending = plans.find((p) => p.status === 'pending');
+    if (pending) return pending;
+    return null;
   },
 
-  completePlan({ feedback = 'loved', notes = '' } = {}) {
-    const plan = this.getSelectedPlan();
-    if (!plan) return null;
+  setSelectedPlan(activity, targetTime = null) {
+    return this.addPlan(activity, targetTime);
+  },
 
+  startPlan(planId = null) {
+    const plans = this.getPlans();
+    let target = null;
+    if (planId) {
+      target = plans.find((p) => p.id === planId);
+    } else {
+      target = plans.find((p) => p.status === 'in_progress') || plans.find((p) => p.status === 'pending');
+    }
+
+    if (!target) return null;
+
+    const updated = plans.map((p) => {
+      if (p.id === target.id) {
+        return {
+          ...p,
+          status: 'in_progress',
+          startedAt: p.startedAt || new Date().toISOString(),
+        };
+      }
+      return p;
+    });
+
+    this.savePlans(updated);
+    const active = updated.find((p) => p.id === target.id);
+    return active;
+  },
+
+  completePlan(planIdOrOptions = null, options = {}) {
+    let planId = null;
+    let feedback = 'loved';
+    let notes = '';
+
+    if (typeof planIdOrOptions === 'string') {
+      planId = planIdOrOptions;
+      if (options.feedback) feedback = options.feedback;
+      if (options.notes) notes = options.notes;
+    } else if (typeof planIdOrOptions === 'object' && planIdOrOptions !== null) {
+      if (planIdOrOptions.feedback) feedback = planIdOrOptions.feedback;
+      if (planIdOrOptions.notes) notes = planIdOrOptions.notes;
+    }
+
+    const plans = this.getPlans();
+    let target = null;
+    if (planId) {
+      target = plans.find((p) => p.id === planId);
+    } else {
+      target = plans.find((p) => p.status === 'in_progress') || plans.find((p) => p.status === 'pending');
+    }
+
+    if (!target) return null;
+
+    // Record into log history
     const log = this.recordLog({
-      activityId: plan.activityId,
-      activityName: plan.activity.name,
+      activityId: target.activityId,
+      activityName: target.activity?.name || 'Activity',
       status: 'done',
       feedback,
       notes,
     });
 
-    this.clearSelectedPlan();
+    const completedAt = new Date().toISOString();
+    const updated = plans.map((p) => {
+      if (p.id === target.id) {
+        return {
+          ...p,
+          status: 'completed',
+          completedAt,
+          feedback,
+          notes,
+        };
+      }
+      return p;
+    });
+
+    this.savePlans(updated);
+    this.clearActiveCommitment();
     return log;
   },
 
-  clearSelectedPlan() {
-    safeStorage.removeItem(STORAGE_KEYS.SELECTED_PLAN);
+  removePlan(planId) {
+    const plans = this.getPlans();
+    const updated = plans.filter((p) => p.id !== planId);
+    this.savePlans(updated);
+  },
+
+  clearCompletedPlans() {
+    const plans = this.getPlans();
+    const updated = plans.filter((p) => p.status !== 'completed');
+    this.savePlans(updated);
+  },
+
+  clearSelectedPlan(planId = null) {
+    if (planId) {
+      this.removePlan(planId);
+      return;
+    }
+    const plans = this.getPlans();
+    const target = plans.find((p) => p.status === 'in_progress') || plans.find((p) => p.status === 'pending');
+    if (target) {
+      this.removePlan(target.id);
+    } else {
+      safeStorage.removeItem(STORAGE_KEYS.SELECTED_PLAN);
+      notifyListeners();
+    }
     this.clearActiveCommitment();
-    notifyListeners();
   },
 
   // ----------------------------------------------------
@@ -522,6 +659,7 @@ export const StorageService = {
     safeStorage.setItem(STORAGE_KEYS.REFLECTIONS, JSON.stringify([]));
     safeStorage.removeItem(STORAGE_KEYS.ACTIVE_COMMITMENT);
     safeStorage.removeItem(STORAGE_KEYS.SELECTED_PLAN);
+    safeStorage.removeItem(STORAGE_KEYS.PLANS_LIST);
     notifyListeners();
   },
 
