@@ -1,249 +1,385 @@
 /**
  * recommendationEngine.js
  * 
- * A transparent, deterministic scoring engine for Cue.
- * Calculates recommendations based on Sparks' current context, intention,
- * leave-something-behind preference, swipe history, and completion feedback.
+ * Transparent, deterministic scoring engine for Cue.
+ * Operates with STRICT HARD CONSTRAINTS before any ranking occurs.
  * 
- * Formula:
- *   score = contextMatch + socialMatch + energyMatch + durationMatch 
- *         + intentionMatch + outcomeMatch + personalPreference + noveltyBonus 
- *         - recentActivityPenalty
+ * If an activity is incompatible with the user's current situation
+ * (e.g. requires people when user is alone, or requires outside when user is home),
+ * it is REMOVED from the candidate pool completely.
+ * 
+ * Best Match, Different Direction, and Wildcard ALL obey these hard constraints.
  */
 
+import { TOP_LEVEL_CATEGORIES } from '../data/categories.js';
+
 /**
- * Score an individual activity against user criteria
+ * Check whether an activity meets the user's non-negotiable hard constraints.
+ * Returns { valid: boolean, reason?: string }
+ */
+export function checkHardConstraints(activity, criteria) {
+  const contexts = activity.contexts || {
+    timeOfDay: [activity.timeContext || 'any'],
+    location: [activity.locationContext || 'any'],
+    social: [activity.socialContext || 'any'],
+  };
+
+  const actSocial = contexts.social || ['any'];
+  const actLocation = contexts.location || ['any'];
+  const actTime = contexts.timeOfDay || ['any'];
+  const actDurations = activity.durations || [activity.duration || '1h'];
+  const actEnergies = activity.energyLevels || [activity.energyLevel || 'moderate'];
+
+  // ------------------------------------------------------------------
+  // 1. SOCIAL HARD CONSTRAINT
+  // ------------------------------------------------------------------
+  // If user is 'alone' / 'solo', activities requiring other people
+  // (e.g. 'friends', 'group', 'partner' without 'solo'/'alone'/'any') MUST BE EXCLUDED!
+  if (criteria.socialContext === 'alone' || criteria.socialContext === 'solo') {
+    const allowsSolo =
+      actSocial.includes('solo') ||
+      actSocial.includes('alone') ||
+      actSocial.includes('any');
+    if (!allowsSolo) {
+      return { valid: false, reason: 'Requires other people (social/group only)' };
+    }
+  } else if (criteria.socialContext === 'friends') {
+    const allowsFriends =
+      actSocial.includes('friends') ||
+      actSocial.includes('group') ||
+      actSocial.includes('any') ||
+      actSocial.includes('partner');
+    if (!allowsFriends) {
+      return { valid: false, reason: 'Does not fit friends/social group' };
+    }
+  } else if (criteria.socialContext === 'family') {
+    const allowsFamily =
+      actSocial.includes('family') ||
+      actSocial.includes('group') ||
+      actSocial.includes('any');
+    if (!allowsFamily) {
+      return { valid: false, reason: 'Does not fit family setting' };
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // 2. LOCATION HARD CONSTRAINT
+  // ------------------------------------------------------------------
+  // If user is at 'home', exclude activities that inherently require being 'outside'!
+  if (criteria.locationContext === 'home') {
+    const allowsHome = actLocation.includes('home') || actLocation.includes('any');
+    if (!allowsHome) {
+      return { valid: false, reason: 'Requires being outside/out' };
+    }
+  } else if (criteria.locationContext === 'outside') {
+    const allowsOutside = actLocation.includes('outside') || actLocation.includes('any');
+    if (!allowsOutside) {
+      return { valid: false, reason: 'Requires being at home' };
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // 3. DURATION HARD CONSTRAINT
+  // ------------------------------------------------------------------
+  // If user has 'quick' (under 45m), strictly exclude activities requiring 2+ hours or half day
+  if (criteria.duration === 'quick') {
+    const strictlyLong = actDurations.every((d) => d === '2h' || d === 'afternoon');
+    if (strictlyLong) {
+      return { valid: false, reason: 'Requires 2+ hours or full afternoon' };
+    }
+  } else if (criteria.duration === '1h') {
+    // If user has 1 hour, exclude activities that strictly require a half-day or afternoon
+    const strictlyAfternoon = actDurations.every((d) => d === 'afternoon');
+    if (strictlyAfternoon) {
+      return { valid: false, reason: 'Requires an entire afternoon / half-day' };
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // 4. ENERGY HARD CONSTRAINT
+  // ------------------------------------------------------------------
+  // If user has 'low' energy, strictly exclude high-intensity activities (heavy lifting, intense cardio)
+  if (criteria.energyLevel === 'low') {
+    const strictlyHigh = actEnergies.every((e) => e === 'high');
+    if (strictlyHigh) {
+      return { valid: false, reason: 'Requires high energy/strenuous effort' };
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // 5. LEAVE SOMETHING BEHIND CONSTRAINT
+  // ------------------------------------------------------------------
+  if (criteria.leaveSomethingBehind === 'yes') {
+    if (!activity.leavesSomethingBehind) {
+      return { valid: false, reason: 'Does not produce an artifact or lasting work' };
+    }
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Score an individual activity against context criteria, intention,
+ * multi-level swipe history, and completion feedback.
+ * Precondition: The activity has already passed checkHardConstraints!
  */
 export function scoreActivity(activity, criteria, swipes = [], logs = []) {
   let score = 0;
   const reasons = [];
 
+  const contexts = activity.contexts || {
+    timeOfDay: [activity.timeContext || 'any'],
+    location: [activity.locationContext || 'any'],
+    social: [activity.socialContext || 'any'],
+  };
+
   // ----------------------------------------------------
-  // 1. TIME OF DAY MATCH (Day vs. Night)
+  // 1. TIME OF DAY FIT (day / night)
   // ----------------------------------------------------
-  if (activity.timeContext === 'any' || activity.timeContext === criteria.timeContext) {
+  const actTime = contexts.timeOfDay || ['any'];
+  if (actTime.includes(criteria.timeContext)) {
+    score += 25;
+    reasons.push(`Ideal for ${criteria.timeContext}time`);
+  } else if (actTime.includes('any')) {
+    score += 15;
+  } else {
+    score -= 10;
+  }
+
+  // ----------------------------------------------------
+  // 2. LOCATION PREFERENCE
+  // ----------------------------------------------------
+  const actLoc = contexts.location || ['any'];
+  if (actLoc.includes(criteria.locationContext)) {
     score += 20;
-    if (activity.timeContext === criteria.timeContext) {
-      reasons.push(`Perfect for ${criteria.timeContext}time`);
-    }
-  } else {
-    // Soft mismatch penalty (e.g. asking for night and activity is day-only)
-    score -= 15;
+    reasons.push(criteria.locationContext === 'home' ? 'At home comfort' : 'Outside in fresh air');
   }
 
   // ----------------------------------------------------
-  // 2. LOCATION MATCH (Home vs. Outside)
+  // 3. SOCIAL FIT
   // ----------------------------------------------------
-  if (activity.locationContext === 'any' || activity.locationContext === criteria.locationContext) {
+  const actSocial = contexts.social || ['any'];
+  if (actSocial.includes(criteria.socialContext)) {
     score += 20;
-    if (activity.locationContext === criteria.locationContext) {
-      reasons.push(`Suits staying ${criteria.locationContext}`);
-    }
+    reasons.push(criteria.socialContext === 'alone' || criteria.socialContext === 'solo' ? 'Perfect for solo time' : 'Suits your company');
+  }
+
+  // ----------------------------------------------------
+  // 4. ENERGY LEVEL FIT
+  // ----------------------------------------------------
+  const actEnergies = activity.energyLevels || [activity.energyLevel || 'moderate'];
+  if (actEnergies.includes(criteria.energyLevel)) {
+    score += 20;
+    reasons.push(`Matches ${criteria.energyLevel} energy`);
   } else {
-    // Definite mismatch (e.g. you're at home, but activity is gym/outside)
-    score -= 30;
+    score += 5;
   }
 
   // ----------------------------------------------------
-  // 3. SOCIAL CONTEXT MATCH (Alone, Friends, Partner, etc.)
+  // 5. DURATION FIT
   // ----------------------------------------------------
-  if (activity.socialContext === 'any' || activity.socialContext === criteria.socialContext) {
+  const actDurations = activity.durations || [activity.duration || '1h'];
+  if (actDurations.includes(criteria.duration)) {
     score += 15;
-    if (activity.socialContext === criteria.socialContext) {
-      reasons.push(`Fits your ${criteria.socialContext} vibe`);
-    }
-  } else if (criteria.socialContext === 'alone' && activity.socialContext !== 'alone') {
-    // You want solo time, but activity requires group
-    score -= 20;
+    reasons.push('Fits your time window');
   }
 
   // ----------------------------------------------------
-  // 4. ENERGY LEVEL MATCH (Low, Moderate, High)
-  // ----------------------------------------------------
-  const energyLevels = ['low', 'moderate', 'high'];
-  const actEnergyIdx = energyLevels.indexOf(activity.energyLevel || 'moderate');
-  const userEnergyIdx = energyLevels.indexOf(criteria.energyLevel || 'moderate');
-  const energyDiff = Math.abs(actEnergyIdx - userEnergyIdx);
-
-  if (energyDiff === 0) {
-    score += 15;
-    reasons.push(`Matches your ${criteria.energyLevel} energy`);
-  } else if (energyDiff === 1) {
-    score += 5; // Close enough
-  } else {
-    // Big mismatch (e.g. low energy user vs high energy gym)
-    score -= 20;
-  }
-
-  // ----------------------------------------------------
-  // 5. DURATION MATCH (quick, 1h, 2h, afternoon)
-  // ----------------------------------------------------
-  if (activity.duration === criteria.duration) {
-    score += 15;
-    reasons.push(`Fits your available time window`);
-  } else {
-    // Compatible duration approximations
-    const durationMap = { quick: 1, '1h': 2, '2h': 3, afternoon: 4 };
-    const diff = Math.abs((durationMap[activity.duration] || 2) - (durationMap[criteria.duration] || 2));
-    if (diff === 1) {
-      score += 6;
-    } else {
-      score -= 10;
-    }
-  }
-
-  // ----------------------------------------------------
-  // 6. INTENTION MATCH (Create, Develop, Reflect, Rest, etc.)
+  // 6. INTENTION MATCH
   // ----------------------------------------------------
   const outcomes = activity.outcomes || [];
+
   if (criteria.intent === 'create') {
-    if (activity.category === 'creative_make' || outcomes.includes('artifact') || outcomes.includes('digital-artifact')) {
-      score += 25;
-      reasons.push('Fulfills your desire to create');
+    if (
+      activity.subcategory === 'CREATIVE / MAKE' ||
+      activity.leavesSomethingBehind ||
+      outcomes.includes('artifact') ||
+      outcomes.includes('digital-artifact')
+    ) {
+      score += 40;
+      reasons.push('Leaves something tangible behind');
     }
   } else if (criteria.intent === 'develop') {
-    if (outcomes.includes('skill') || outcomes.includes('knowledge')) {
-      score += 25;
-      reasons.push('Builds a real skill or knowledge');
+    if (
+      activity.topLevelCategory === TOP_LEVEL_CATEGORIES.CORE ||
+      activity.skillBuilding ||
+      outcomes.includes('skill') ||
+      outcomes.includes('knowledge')
+    ) {
+      score += 40;
+      reasons.push('Builds capability & mastery');
     }
   } else if (criteria.intent === 'reflect') {
-    if (outcomes.includes('memory') || activity.category === 'core_responsibility') {
-      score += 25;
-      reasons.push('Offers thoughtful, centering space');
+    if (
+      activity.subcategory === 'Personal reflection & inner work' ||
+      outcomes.includes('clarity') ||
+      outcomes.includes('peace') ||
+      outcomes.includes('relaxation')
+    ) {
+      score += 40;
+      reasons.push('Nourishing & contemplative');
     }
   } else if (criteria.intent === 'connect') {
-    if (outcomes.includes('connection') || activity.socialContext !== 'alone') {
-      score += 25;
-      reasons.push('Great for meaningful social connection');
-    }
-  } else if (criteria.intent === 'rest') {
-    if (outcomes.includes('relaxation') || activity.energyLevel === 'low') {
-      score += 25;
-      reasons.push('Calming and restorative');
+    if (
+      activity.topLevelCategory === TOP_LEVEL_CATEGORIES.LIFE ||
+      outcomes.includes('connection') ||
+      outcomes.includes('warmth') ||
+      outcomes.includes('memory')
+    ) {
+      score += 35;
+      reasons.push('Deepens connection');
     }
   } else if (criteria.intent === 'entertain') {
-    if (outcomes.includes('entertainment') || outcomes.includes('experience')) {
-      score += 20;
-      reasons.push('Fun and engaging');
+    if (
+      activity.subcategory === 'FILM, MUSIC & STORIES' ||
+      activity.subcategory === 'SOCIAL & NIGHTLIFE' ||
+      outcomes.includes('entertainment')
+    ) {
+      score += 35;
+      reasons.push('Engaging entertainment');
     }
-  } else if (criteria.intent === 'experience') {
-    if (outcomes.includes('experience') || activity.category === 'life_experiences') {
-      score += 25;
-      reasons.push('A memorable lived experience');
+  } else if (criteria.intent === 'rest') {
+    if (
+      activity.subcategory === 'REST & IDLE TIME' ||
+      outcomes.includes('relaxation') ||
+      outcomes.includes('peace')
+    ) {
+      score += 45;
+      reasons.push('Guilt-free restorative rest');
     }
   } else if (criteria.intent === 'surprise') {
-    // Small random boost to inject serendipity
-    score += Math.floor(Math.random() * 20);
-    reasons.push('A spontaneous spark for you');
+    // Random spark bonus
+    score += Math.floor(Math.random() * 25);
+    reasons.push('Unexpected spark');
   }
 
   // ----------------------------------------------------
-  // 7. "LEAVE SOMETHING BEHIND" (Physical/digital artifact or skill)
+  // 7. FAVORITE BONUS
   // ----------------------------------------------------
-  if (criteria.leaveSomethingBehind === 'yes') {
-    if (activity.leavesSomethingBehind) {
-      score += 30;
-      reasons.push('Leaves behind a tangible artifact or skill');
-    } else {
-      score -= 35; // User specifically asked to leave something behind
-    }
-  } else if (criteria.leaveSomethingBehind === 'no') {
-    if (!activity.leavesSomethingBehind) {
-      score += 15;
-    }
-  }
-
-  // ----------------------------------------------------
-  // 8. PERSONAL PREFERENCES (Favorites & Swipe History)
-  // ----------------------------------------------------
-  if (activity.isFavorite) {
+  if (activity.favorite || activity.isFavorite) {
     score += 15;
-    reasons.push('One of your starred favorites');
+    reasons.push('One of your favorites');
   }
 
-  // Check swipe history
-  const activitySwipes = swipes.filter((s) => s.activityId === activity.id);
-  const recentSwipe = activitySwipes[0]; // Most recent
+  // ----------------------------------------------------
+  // 8. SWIPE PREFERENCE LEARNING
+  // ----------------------------------------------------
+  // Exact activity swipes
+  const actSwipes = swipes.filter((s) => s.activityId === activity.id);
+  actSwipes.forEach((s) => {
+    if (s.direction === 'right') score += 15;
+    if (s.direction === 'left') {
+      if (s.isPermanentDislike) score -= 50;
+      else score -= 15;
+    }
+  });
 
-  if (recentSwipe) {
-    if (recentSwipe.direction === 'right') {
-      score += 15;
-      reasons.push("You've expressed interest in this");
-    } else if (recentSwipe.direction === 'left') {
-      if (recentSwipe.isPermanentDislike || recentSwipe.reason === 'Not my thing') {
-        score -= 80; // Heavy penalty for genuine disinterest
-      } else {
-        // Contextual rejection (e.g. "not tonight", "too tired")
-        // Only penalize if current context matches the swipe rejection context
-        if (recentSwipe.timeContext === criteria.timeContext) {
-          score -= 10;
-        }
+  // Subcategory affinity bonus
+  if (activity.subcategory) {
+    const subSwipes = swipes.filter((s) => s.subcategory === activity.subcategory);
+    const rights = subSwipes.filter((s) => s.direction === 'right').length;
+    if (subSwipes.length >= 2) {
+      const ratio = rights / subSwipes.length;
+      if (ratio > 0.7) {
+        score += 20;
+        reasons.push(`High affinity for ${activity.subcategory}`);
+      } else if (ratio < 0.25) {
+        score -= 20;
       }
     }
   }
 
   // ----------------------------------------------------
-  // 9. COMPLETION LOGS & FEEDBACK
+  // 9. COMPLETION FEEDBACK
   // ----------------------------------------------------
-  const activityLogs = logs.filter((l) => l.activityId === activity.id);
-  if (activityLogs.length > 0) {
-    const lastLog = activityLogs[0];
-    // Feedback weighting
-    if (lastLog.feedback === 'loved') score += 20;
-    else if (lastLog.feedback === 'good') score += 10;
-    else if (lastLog.feedback === 'not_really') score -= 15;
-    else if (lastLog.feedback === 'never_again') score -= 100;
-
-    // Recency penalty: if done in the last 2 days, deprioritize so user gets variety
-    const hoursSinceDone = (Date.now() - new Date(lastLog.timestamp).getTime()) / (1000 * 60 * 60);
-    if (hoursSinceDone < 48) {
+  const actLogs = logs.filter((l) => l.activityId === activity.id);
+  actLogs.forEach((l) => {
+    if (l.feedback === 'loved') {
+      score += 20;
+      reasons.push('You loved doing this recently');
+    } else if (l.feedback === 'not_really') {
       score -= 25;
     }
-  } else {
-    // Novelty bonus for untried activities
-    score += 8;
-  }
+  });
 
   return {
     activity,
     score,
-    reasons: reasons.slice(0, 3), // Keep top 3 crisp reasons
+    reasons: reasons.slice(0, 3),
   };
 }
 
 /**
  * Generate 3 distinct recommendations:
- * 1. Best Match: Highest calculated score
- * 2. Different Direction: Next highest score from a different category or outcome
- * 3. Wildcard: A refreshing or novel option from the library
+ * 1. BEST MATCH: Highest contextual + personal fit
+ * 2. DIFFERENT DIRECTION: Different subcategory/category, but still appropriate to context
+ * 3. WILDCARD: Something less obvious but still compatible
+ * 
+ * ALL 3 MUST STRICTLY OBEY HARD CONSTRAINTS!
  */
 export function getRecommendations(activities, criteria, swipes = [], logs = []) {
   if (!activities || activities.length === 0) {
     return null;
   }
 
-  // Score all candidate activities
-  const scored = activities.map((act) => scoreActivity(act, criteria, swipes, logs));
+  // STEP 1: HARD CONSTRAINTS FILTERING FIRST!
+  // Remove any activity that violates social, location, duration, or energy constraints.
+  let validCandidates = activities.filter((act) => {
+    const check = checkHardConstraints(act, criteria);
+    return check.valid;
+  });
+
+  // Fallback guardrail: If the user specified constraints that left fewer than 3 candidates,
+  // we do NOT relax social (alone vs group) or location (home vs outside) because those are strict physical realities.
+  // Instead, if needed, we allow adjacent durations or energies.
+  if (validCandidates.length < 3) {
+    const relaxedCriteria = { ...criteria, duration: 'any' };
+    const secondPass = activities.filter((act) => {
+      // Still strictly enforce social and location!
+      const socLocCheck = checkHardConstraints(act, {
+        ...relaxedCriteria,
+        energyLevel: 'moderate',
+      });
+      return socLocCheck.valid;
+    });
+    if (secondPass.length >= validCandidates.length) {
+      validCandidates = secondPass;
+    }
+  }
+
+  // If still empty (e.g. database has 0 items), return null
+  if (validCandidates.length === 0) {
+    return null;
+  }
+
+  // STEP 2: SCORE ALL VALID CANDIDATES
+  const scored = validCandidates.map((act) => scoreActivity(act, criteria, swipes, logs));
 
   // Sort descending by score
   scored.sort((a, b) => b.score - a.score);
 
-  // 1. BEST MATCH
-  const bestMatch = scored[0] || { activity: activities[0], score: 50, reasons: ['Great fit for your current moment'] };
+  // 1. BEST MATCH: Highest scored valid candidate
+  const bestMatch = scored[0];
 
   // 2. DIFFERENT DIRECTION:
-  // Must be a different activity, ideally from a different category or outcome
+  // Must be drawn STRICTLY from valid candidates!
+  // Different subcategory or category from bestMatch.
   const diffCandidates = scored.slice(1).filter((item) => {
     return (
       item.activity.id !== bestMatch.activity.id &&
-      (item.activity.category !== bestMatch.activity.category ||
-        item.activity.leavesSomethingBehind !== bestMatch.activity.leavesSomethingBehind)
+      (item.activity.subcategory !== bestMatch.activity.subcategory ||
+       item.activity.topLevelCategory !== bestMatch.activity.topLevelCategory)
     );
   });
-  const differentDirection = diffCandidates[0] || scored[1] || scored[0];
+
+  const differentDirection =
+    diffCandidates[0] ||
+    scored.slice(1).find((i) => i.activity.id !== bestMatch.activity.id) ||
+    scored[0];
 
   // 3. WILDCARD:
-  // Must be distinct from both bestMatch and differentDirection, preferably untried or surprising
+  // Must be drawn STRICTLY from valid candidates!
+  // Distinct from bestMatch and differentDirection.
   const wildcardCandidates = scored.slice(1).filter((item) => {
     return (
       item.activity.id !== bestMatch.activity.id &&
@@ -251,23 +387,27 @@ export function getRecommendations(activities, criteria, swipes = [], logs = [])
     );
   });
 
-  // Pick an interesting wildcard from candidates
-  const wildcard = wildcardCandidates[Math.min(1, wildcardCandidates.length - 1)] || scored[2] || scored[0];
+  // Pick a fresh candidate from top alternatives or random from wildcard candidates
+  const wildcard =
+    wildcardCandidates[Math.floor(Math.random() * Math.min(3, wildcardCandidates.length))] ||
+    wildcardCandidates[0] ||
+    differentDirection ||
+    bestMatch;
 
   return {
     bestMatch: {
       ...bestMatch.activity,
-      matchReason: bestMatch.reasons.join(' · ') || 'Aligned with your context',
+      matchReason: bestMatch.reasons.join(' · ') || 'Top contextual fit for your current situation',
       score: bestMatch.score,
     },
     differentDirection: {
       ...differentDirection.activity,
-      matchReason: differentDirection.reasons.join(' · ') || 'A fresh alternative',
+      matchReason: differentDirection.reasons.join(' · ') || 'A fresh, distinct direction that fits your conditions',
       score: differentDirection.score,
     },
     wildcard: {
       ...wildcard.activity,
-      matchReason: wildcard.reasons.join(' · ') || 'Spontaneous option to inspire you',
+      matchReason: wildcard.reasons.join(' · ') || 'An unexpected choice that matches your situation',
       score: wildcard.score,
     },
   };

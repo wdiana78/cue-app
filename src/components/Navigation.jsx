@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Compass,
   Sparkles,
@@ -8,18 +8,32 @@ import {
   PenTool,
   User,
   MessageCircle,
+  Play,
 } from 'lucide-react';
+import { StorageService } from '../services/storage.js';
 
 export const Navigation = ({
   activeTab,
   onTabChange,
   onOpenAiCompanion,
 }) => {
+  const [selectedPlan, setSelectedPlan] = useState(null);
+
+  const loadPlan = () => {
+    setSelectedPlan(StorageService.getSelectedPlan());
+  };
+
+  useEffect(() => {
+    loadPlan();
+    return StorageService.subscribe(loadPlan);
+  }, []);
+
   const navItems = [
     { id: 'home', label: 'Home', icon: Compass },
     { id: 'recommend', label: 'What Should I Do?', icon: Sparkles },
-    { id: 'train', label: 'Train Your Cue', icon: Flame },
+    { id: 'up_next', label: 'Up Next', icon: Play, hasBadge: Boolean(selectedPlan) },
     { id: 'explore', label: 'My Life', icon: BookOpen },
+    { id: 'train', label: 'Train My Cue', icon: Flame },
     { id: 'projects', label: 'Projects', icon: FolderKanban },
     { id: 'reflect', label: 'Reflect', icon: PenTool },
     { id: 'my_cue', label: 'My Cue', icon: User },
@@ -49,7 +63,7 @@ export const Navigation = ({
         </button>
 
         {/* Desktop Navigation Links */}
-        <nav className="hidden md:flex items-center gap-1">
+        <nav className="hidden lg:flex items-center gap-1">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -59,7 +73,7 @@ export const Navigation = ({
                 id={`nav-link-${item.id}`}
                 type="button"
                 onClick={() => onTabChange(item.id)}
-                className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer relative ${
                   isActive
                     ? 'bg-[#FFE5EF] text-[#FF2E79]'
                     : 'text-[#6B5E66] hover:text-[#2D262A] hover:bg-[#FFF2F7]'
@@ -67,6 +81,36 @@ export const Navigation = ({
               >
                 <Icon className="w-3.5 h-3.5" />
                 <span>{item.label}</span>
+                {item.hasBadge && (
+                  <span className="w-2 h-2 rounded-full bg-[#FF2E79] animate-pulse"></span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Medium Screen Navigation (md to lg) */}
+        <nav className="hidden md:flex lg:hidden items-center gap-1">
+          {navItems.slice(0, 5).map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                id={`nav-link-md-${item.id}`}
+                type="button"
+                onClick={() => onTabChange(item.id)}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer relative ${
+                  isActive
+                    ? 'bg-[#FFE5EF] text-[#FF2E79]'
+                    : 'text-[#6B5E66] hover:text-[#2D262A] hover:bg-[#FFF2F7]'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{item.label === 'What Should I Do?' ? 'Decide' : item.label}</span>
+                {item.hasBadge && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#FF2E79]"></span>
+                )}
               </button>
             );
           })}
@@ -97,16 +141,25 @@ export const Navigation = ({
               id={`mobile-nav-${item.id}`}
               type="button"
               onClick={() => onTabChange(item.id)}
-              className={`flex flex-col items-center justify-center p-1.5 rounded-xl min-w-[44px] cursor-pointer transition-colors ${
+              className={`flex flex-col items-center justify-center p-1.5 rounded-xl min-w-[40px] cursor-pointer transition-colors relative ${
                 isActive ? 'text-[#FF2E79]' : 'text-[#8A7983]'
               }`}
             >
-              <Icon className="w-4 h-4 mb-0.5" />
-              <span className="text-[9px] font-bold truncate max-w-[54px]">
+              <div className="relative">
+                <Icon className="w-4 h-4 mb-0.5" />
+                {item.hasBadge && (
+                  <span className="absolute -top-0.5 -right-1 w-2 h-2 rounded-full bg-[#FF2E79]"></span>
+                )}
+              </div>
+              <span className="text-[9px] font-bold truncate max-w-[50px]">
                 {item.id === 'recommend'
                   ? 'Decide'
                   : item.id === 'explore'
                   ? 'Life'
+                  : item.id === 'up_next'
+                  ? 'Up Next'
+                  : item.id === 'train'
+                  ? 'Train'
                   : item.label}
               </span>
             </button>

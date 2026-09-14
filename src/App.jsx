@@ -3,6 +3,7 @@ import { Navigation } from './components/Navigation.jsx';
 import { HomePage } from './pages/HomePage.jsx';
 import { TrainCuePage } from './pages/TrainCuePage.jsx';
 import { WhatShouldIDoPage } from './pages/WhatShouldIDoPage.jsx';
+import { UpNextPage } from './pages/UpNextPage.jsx';
 import { ExplorePage } from './pages/ExplorePage.jsx';
 import { ProjectsPage } from './pages/ProjectsPage.jsx';
 import { ReflectPage } from './pages/ReflectPage.jsx';
@@ -36,14 +37,16 @@ export default function App() {
 
   const handleSelectActivity = (activity) => {
     setSelectedActivity(activity);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleCommitActivity = (activity) => {
-    StorageService.setActiveCommitment(activity.id, activity.name);
-    showToast(`Committed to: "${activity.name}". You've got this, Sparks! ✨`);
-    if (selectedActivity) {
-      setSelectedActivity(null);
-    }
+    StorageService.setSelectedPlan(activity);
+    showToast(`Saved "${activity.name}" to Up Next! ✨`);
+    setSelectedActivity(null);
+    setIsCreatingActivity(false);
+    setActiveTab('up_next');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleOpenCompletionModal = (activityName) => {
@@ -52,24 +55,25 @@ export default function App() {
   };
 
   const handleCompleteActivity = (status, feedback, notes) => {
-    const active = StorageService.getActiveCommitment();
-    const actId = active ? active.activityId : 'manual_activity';
+    const selected = StorageService.getSelectedPlan();
+    const actName = completionTargetName || selected?.activity?.name || 'Activity';
+    const actId = selected?.activityId || 'activity-done';
 
-    StorageService.logCompletion({
+    StorageService.recordLog({
       activityId: actId,
-      activityName: completionTargetName,
+      activityName: actName,
       status,
       feedback,
       notes,
     });
 
-    StorageService.clearActiveCommitment();
+    StorageService.clearSelectedPlan();
     setIsCompletionModalOpen(false);
 
     if (status === 'done') {
-      showToast(`Wonderful! Logged "${completionTargetName}" as done! 🎉`);
+      showToast(`Wonderful! Logged "${actName}" as completed! 🎉`);
     } else {
-      showToast(`Checked in on "${completionTargetName}". Good decision!`);
+      showToast(`Checked in on "${actName}". Good decision!`);
     }
   };
 
@@ -130,7 +134,10 @@ export default function App() {
             activity={selectedActivity}
             onBack={() => setSelectedActivity(null)}
             onCommit={handleCommitActivity}
-            onStartProject={handleStartProject}
+            onNavigateToUpNext={() => {
+              setSelectedActivity(null);
+              setActiveTab('up_next');
+            }}
           />
         ) : isCreatingActivity ? (
           <CreateActivityPage
@@ -155,6 +162,19 @@ export default function App() {
                 onCommitActivity={handleCommitActivity}
                 onOpenCompletionModal={handleOpenCompletionModal}
                 onLaunchRecommendationWithIntent={handleLaunchWithIntent}
+              />
+            )}
+
+            {activeTab === 'up_next' && (
+              <UpNextPage
+                onNavigate={(tab) => {
+                  setSelectedActivity(null);
+                  setIsCreatingActivity(false);
+                  setActiveTab(tab);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                onSelectActivity={handleSelectActivity}
+                onOpenCompletionModal={handleOpenCompletionModal}
               />
             )}
 

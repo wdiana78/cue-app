@@ -1,16 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
+  RotateCcw,
   Clock,
   MapPin,
   Users,
   Zap,
-  Target,
-  Gem,
-  CheckCircle2,
-  RotateCcw,
-  Compass,
-  ArrowRight,
 } from 'lucide-react';
 import { StorageService } from '../services/storage.js';
 import { getRecommendations } from '../services/recommendationEngine.js';
@@ -24,29 +19,26 @@ export const WhatShouldIDoPage = ({
 }) => {
   // Current hour context default
   const currentHour = new Date().getHours();
-  const defaultTime = currentHour >= 18 || currentHour < 6 ? 'night' : 'day';
+  const defaultTime = currentHour >= 18 || currentHour < 5 ? 'night' : 'day';
 
-  // State for all 7 criteria dimensions
-  const [timeContext, setTimeContext] = useState(defaultTime); // 'day' | 'night'
-  const [locationContext, setLocationContext] = useState('home'); // 'home' | 'outside'
-  const [socialContext, setSocialContext] = useState('alone'); // 'alone' | 'family' | 'friends' | 'partner' | 'group'
-  const [energyLevel, setEnergyLevel] = useState('moderate'); // 'low' | 'moderate' | 'high'
-  const [duration, setDuration] = useState('1h'); // 'quick' | '1h' | '2h' | 'afternoon'
-  const [intent, setIntent] = useState(initialIntent || 'create'); // 'create' | 'develop' | 'reflect' | 'connect' | 'entertain' | 'rest' | 'experience' | 'surprise'
-  const [leaveSomethingBehind, setLeaveSomethingBehind] = useState('either'); // 'yes' | 'no' | 'either'
+  // Criteria state
+  const [timeContext, setTimeContext] = useState(defaultTime);
+  const [locationContext, setLocationContext] = useState('home');
+  const [socialContext, setSocialContext] = useState('alone');
+  const [energyLevel, setEnergyLevel] = useState('moderate');
+  const [duration, setDuration] = useState('1h');
+  const [intent, setIntent] = useState(initialIntent || 'create');
+  const [leaveSomethingBehind, setLeaveSomethingBehind] = useState('either');
 
-  // Calculated recommendations result: { bestMatch, differentDirection, wildcard }
   const [recommendations, setRecommendations] = useState(null);
   const [hasCalculated, setHasCalculated] = useState(false);
 
-  // Sync initialIntent if passed
   useEffect(() => {
     if (initialIntent) {
       setIntent(initialIntent);
     }
   }, [initialIntent]);
 
-  // Recalculate recommendations
   const runRecommendation = () => {
     const activities = StorageService.getActivities();
     const swipes = StorageService.getSwipes();
@@ -67,7 +59,6 @@ export const WhatShouldIDoPage = ({
     setHasCalculated(true);
   };
 
-  // Auto-run when criteria change
   useEffect(() => {
     runRecommendation();
   }, [timeContext, locationContext, socialContext, energyLevel, duration, intent, leaveSomethingBehind]);
@@ -76,41 +67,40 @@ export const WhatShouldIDoPage = ({
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 space-y-8">
       {/* Header */}
       <div>
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FFE5EF] text-[#FF2E79] text-xs font-black tracking-wider uppercase mb-2">
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FFE5EF] text-[#FF2E79] text-xs font-black uppercase tracking-widest mb-2">
           <Sparkles className="w-3.5 h-3.5" />
           <span>Decision Flow</span>
         </div>
-        <h1 className="font-display font-black text-3xl sm:text-4xl text-[#2D262A] tracking-tight">
+        <h1 className="font-display font-black text-3xl sm:text-4xl text-[#21181D] tracking-tight">
           What Should I Do?
         </h1>
-        <p className="text-xs sm:text-sm text-[#6B5E66] mt-1">
-          Tell Cue your current context. Cue evaluates your library to offer 3 tailored options.
+        <p className="text-sm text-[#665760] mt-1">
+          Given your current situation, Cue evaluates your personal life library to recommend 3 appropriate options.
         </p>
       </div>
 
       {/* Interactive Criteria Form */}
-      <div className="bg-white rounded-3xl p-6 sm:p-7 border border-[#FAD2E1] shadow-xs space-y-6">
-        {/* 1. Time of Day & Location */}
+      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#EBE3E7] shadow-xs space-y-6">
+        {/* 1. Time & Location */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          {/* Time of Day */}
           <div>
             <label className="text-xs font-bold uppercase tracking-wider text-[#8A7983] block mb-2">
               Time of Day
             </label>
             <div className="grid grid-cols-2 gap-2">
               {[
-                { id: 'day', label: 'Day' },
-                { id: 'night', label: 'Night' },
+                { id: 'day', label: 'Daytime' },
+                { id: 'night', label: 'Nighttime' },
               ].map((t) => (
                 <button
                   key={t.id}
-                  id={`time-${t.id}`}
+                  id={`time-btn-${t.id}`}
                   type="button"
                   onClick={() => setTimeContext(t.id)}
-                  className={`py-2.5 px-4 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                  className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                     timeContext === t.id
-                      ? 'bg-[#FF2E79] text-white border-[#FF2E79] shadow-xs'
-                      : 'bg-[#FFFDFE] text-[#6B5E66] border-[#F5E6EC] hover:bg-[#FFE5EF]'
+                      ? 'bg-[#21181D] text-white border-[#21181D]'
+                      : 'bg-[#FAF7F8] text-[#665760] border-[#EBE3E7] hover:bg-[#FFE5EF]'
                   }`}
                 >
                   {t.label}
@@ -119,25 +109,24 @@ export const WhatShouldIDoPage = ({
             </div>
           </div>
 
-          {/* Location */}
           <div>
             <label className="text-xs font-bold uppercase tracking-wider text-[#8A7983] block mb-2">
               Location
             </label>
             <div className="grid grid-cols-2 gap-2">
               {[
-                { id: 'home', label: 'Home' },
-                { id: 'outside', label: 'Outside' },
+                { id: 'home', label: 'At Home' },
+                { id: 'outside', label: 'Outside / Out' },
               ].map((loc) => (
                 <button
                   key={loc.id}
-                  id={`location-${loc.id}`}
+                  id={`location-btn-${loc.id}`}
                   type="button"
                   onClick={() => setLocationContext(loc.id)}
-                  className={`py-2.5 px-4 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                  className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                     locationContext === loc.id
-                      ? 'bg-[#FF2E79] text-white border-[#FF2E79] shadow-xs'
-                      : 'bg-[#FFFDFE] text-[#6B5E66] border-[#F5E6EC] hover:bg-[#FFE5EF]'
+                      ? 'bg-[#21181D] text-white border-[#21181D]'
+                      : 'bg-[#FAF7F8] text-[#665760] border-[#EBE3E7] hover:bg-[#FFE5EF]'
                   }`}
                 >
                   {loc.label}
@@ -147,121 +136,116 @@ export const WhatShouldIDoPage = ({
           </div>
         </div>
 
-        {/* 2. Social Setting */}
-        <div>
-          <label className="text-xs font-bold uppercase tracking-wider text-[#8A7983] block mb-2">
-            Social Setting
-          </label>
-          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-            {[
-              { id: 'alone', label: 'Alone' },
-              { id: 'family', label: 'Family' },
-              { id: 'friends', label: 'Friends' },
-              { id: 'partner', label: 'Partner' },
-              { id: 'group', label: 'Group' },
-            ].map((soc) => (
-              <button
-                key={soc.id}
-                id={`social-${soc.id}`}
-                type="button"
-                onClick={() => setSocialContext(soc.id)}
-                className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                  socialContext === soc.id
-                    ? 'bg-[#2D262A] text-white border-[#2D262A] shadow-xs'
-                    : 'bg-[#FFFDFE] text-[#6B5E66] border-[#F5E6EC] hover:bg-gray-100'
-                }`}
-              >
-                {soc.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 3. Energy & Time Available */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          {/* Energy */}
+        {/* 2. Social Setting & Energy */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 pt-4 border-t border-[#F5EDF0]">
           <div>
             <label className="text-xs font-bold uppercase tracking-wider text-[#8A7983] block mb-2">
-              Energy Level
+              Social Setting
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: 'alone', label: 'Solo' },
+                { id: 'friends', label: 'Friends' },
+                { id: 'family', label: 'Family' },
+              ].map((s) => (
+                <button
+                  key={s.id}
+                  id={`social-btn-${s.id}`}
+                  type="button"
+                  onClick={() => setSocialContext(s.id)}
+                  className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                    socialContext === s.id
+                      ? 'bg-[#21181D] text-white border-[#21181D]'
+                      : 'bg-[#FAF7F8] text-[#665760] border-[#EBE3E7] hover:bg-[#FFE5EF]'
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold uppercase tracking-wider text-[#8A7983] block mb-2">
+              Current Energy
             </label>
             <div className="grid grid-cols-3 gap-2">
               {[
                 { id: 'low', label: 'Low' },
                 { id: 'moderate', label: 'Moderate' },
                 { id: 'high', label: 'High' },
-              ].map((lvl) => (
+              ].map((e) => (
                 <button
-                  key={lvl.id}
-                  id={`energy-${lvl.id}`}
+                  key={e.id}
+                  id={`energy-btn-${e.id}`}
                   type="button"
-                  onClick={() => setEnergyLevel(lvl.id)}
-                  className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                    energyLevel === lvl.id
-                      ? 'bg-[#FFB703] text-[#4A3200] border-[#FFB703] shadow-xs'
-                      : 'bg-[#FFFDFE] text-[#6B5E66] border-[#F5E6EC] hover:bg-[#FFF8E1]'
+                  onClick={() => setEnergyLevel(e.id)}
+                  className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                    energyLevel === e.id
+                      ? 'bg-[#21181D] text-white border-[#21181D]'
+                      : 'bg-[#FAF7F8] text-[#665760] border-[#EBE3E7] hover:bg-[#FFE5EF]'
                   }`}
                 >
-                  {lvl.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Time Available */}
-          <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-[#8A7983] block mb-2">
-              Time Available
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {[
-                { id: 'quick', label: '15–30m' },
-                { id: '1h', label: '30–60m' },
-                { id: '2h', label: '1–2 hrs' },
-                { id: 'afternoon', label: '2+ hrs' },
-              ].map((d) => (
-                <button
-                  key={d.id}
-                  id={`duration-${d.id}`}
-                  type="button"
-                  onClick={() => setDuration(d.id)}
-                  className={`py-2.5 px-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                    duration === d.id
-                      ? 'bg-[#70C1B3] text-white border-[#70C1B3] shadow-xs'
-                      : 'bg-[#FFFDFE] text-[#6B5E66] border-[#F5E6EC] hover:bg-[#E0F2F1]'
-                  }`}
-                >
-                  {d.label}
+                  {e.label}
                 </button>
               ))}
             </div>
           </div>
         </div>
 
-        {/* 4. Intention */}
-        <div>
+        {/* 3. Duration */}
+        <div className="pt-4 border-t border-[#F5EDF0]">
           <label className="text-xs font-bold uppercase tracking-wider text-[#8A7983] block mb-2">
-            Intention
+            Available Time Window
           </label>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {[
-              { id: 'create', label: 'Create' },
-              { id: 'develop', label: 'Develop' },
-              { id: 'reflect', label: 'Reflect' },
-              { id: 'connect', label: 'Connect' },
-              { id: 'entertain', label: 'Entertain' },
-              { id: 'rest', label: 'Rest' },
-              { id: 'experience', label: 'Experience' },
-              { id: 'surprise', label: 'Surprise me' },
+              { id: 'quick', label: '< 45 mins (Quick)' },
+              { id: '1h', label: '1 hour' },
+              { id: '2h', label: '2 hours' },
+              { id: 'afternoon', label: 'Half Day / Open' },
+            ].map((d) => (
+              <button
+                key={d.id}
+                id={`duration-btn-${d.id}`}
+                type="button"
+                onClick={() => setDuration(d.id)}
+                className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                  duration === d.id
+                    ? 'bg-[#21181D] text-white border-[#21181D]'
+                    : 'bg-[#FAF7F8] text-[#665760] border-[#EBE3E7] hover:bg-[#FFE5EF]'
+                }`}
+              >
+                {d.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 4. Intention (The 7 primary intentions) */}
+        <div className="pt-4 border-t border-[#F5EDF0]">
+          <label className="text-xs font-bold uppercase tracking-wider text-[#8A7983] block mb-2">
+            What kind of experience do you want?
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+            {[
+              { id: 'create', label: 'CREATE' },
+              { id: 'develop', label: 'DEVELOP' },
+              { id: 'reflect', label: 'REFLECT' },
+              { id: 'connect', label: 'CONNECT' },
+              { id: 'entertain', label: 'ENTERTAIN' },
+              { id: 'rest', label: 'REST' },
+              { id: 'surprise', label: 'SURPRISE ME' },
             ].map((it) => (
               <button
                 key={it.id}
                 id={`intent-${it.id}`}
                 type="button"
                 onClick={() => setIntent(it.id)}
-                className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                className={`py-2.5 px-2 text-center rounded-xl text-[11px] font-black tracking-wider border transition-all cursor-pointer ${
                   intent === it.id
-                    ? 'bg-[#FF5C8A] text-white border-[#FF5C8A] shadow-xs'
-                    : 'bg-[#FFFDFE] text-[#6B5E66] border-[#F5E6EC] hover:bg-[#FFE5EF]'
+                    ? 'bg-[#FF2E79] text-white border-[#FF2E79] shadow-xs'
+                    : 'bg-[#FAF7F8] text-[#665760] border-[#EBE3E7] hover:bg-[#FFE5EF]'
                 }`}
               >
                 {it.label}
@@ -270,50 +254,53 @@ export const WhatShouldIDoPage = ({
           </div>
         </div>
 
-        {/* 5. Leave Something Behind (Physical/digital artifact or skill) */}
-        <div className="pt-2 border-t border-[#FBF0F4]">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-[#8A7983] block">
-                Leave Something Behind?
-              </span>
-              <span className="text-xs text-[#6B5E66]">
-                Prioritize activities that produce finished work, artifacts, or skills.
-              </span>
-            </div>
+        {/* 5. Leaves Something Behind */}
+        <div className="pt-4 border-t border-[#F5EDF0] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <span className="text-xs font-bold uppercase tracking-wider text-[#8A7983] block">
+              Leave Something Behind?
+            </span>
+            <span className="text-xs text-[#665760]">
+              Prioritize tangible crafts, written pieces, or artifacts that remain.
+            </span>
+          </div>
 
-            <div className="flex items-center gap-2">
-              {[
-                { id: 'yes', label: 'Yes' },
-                { id: 'no', label: 'No' },
-                { id: 'either', label: 'Either' },
-              ].map((opt) => (
-                <button
-                  key={opt.id}
-                  id={`leave-behind-${opt.id}`}
-                  type="button"
-                  onClick={() => setLeaveSomethingBehind(opt.id)}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                    leaveSomethingBehind === opt.id
-                      ? 'bg-[#00897B] text-white border-[#00897B]'
-                      : 'bg-[#FFFDFE] text-[#6B5E66] border-[#F5E6EC] hover:bg-[#E0F2F1]'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+          <div className="flex items-center gap-2">
+            {[
+              { id: 'yes', label: 'Yes' },
+              { id: 'no', label: 'No' },
+              { id: 'either', label: 'Either' },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                id={`leave-behind-${opt.id}`}
+                type="button"
+                onClick={() => setLeaveSomethingBehind(opt.id)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                  leaveSomethingBehind === opt.id
+                    ? 'bg-[#059669] text-white border-[#059669]'
+                    : 'bg-[#FAF7F8] text-[#665760] border-[#EBE3E7] hover:bg-[#ECFDF5]'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Recommendations Results (Three distinct choices) */}
+      {/* 3 Distinct Recommendations */}
       {hasCalculated && recommendations && (
-        <div className="space-y-6 animate-in fade-in duration-200">
+        <div className="space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="font-display font-black text-2xl text-[#2D262A]">
-              3 Pathways For Right Now
-            </h2>
+            <div>
+              <h2 className="font-display font-black text-2xl text-[#21181D]">
+                3 Pathways For Right Now
+              </h2>
+              <p className="text-xs text-[#8A7983] mt-0.5">
+                Evaluated against your library, context, and multi-level preferences.
+              </p>
+            </div>
             <button
               id="recalculate-btn"
               type="button"
@@ -321,7 +308,7 @@ export const WhatShouldIDoPage = ({
               className="text-xs font-bold text-[#FF2E79] flex items-center gap-1.5 hover:underline cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Shuffle Options</span>
+              <span>Shuffle</span>
             </button>
           </div>
 
@@ -329,13 +316,13 @@ export const WhatShouldIDoPage = ({
             {/* 1. Best Match */}
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <span className="px-3 py-1 rounded-full bg-[#E8F5E9] text-[#2E7D32] text-xs font-black uppercase tracking-wider">
+                <span className="px-3 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[11px] font-black uppercase tracking-wider">
                   ★ Best Match
                 </span>
-                <span className="text-[11px] text-[#6B5E66] truncate">
-                  {recommendations.bestMatch.matchReason}
-                </span>
               </div>
+              <p className="text-[11px] text-[#665760] font-medium italic min-h-[2.5rem]">
+                "{recommendations.bestMatch.matchReason}"
+              </p>
               <ActivityCard
                 activity={recommendations.bestMatch}
                 onSelect={onSelectActivity}
@@ -347,13 +334,13 @@ export const WhatShouldIDoPage = ({
             {/* 2. Different Direction */}
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <span className="px-3 py-1 rounded-full bg-[#E0F2F1] text-[#00897B] text-xs font-black uppercase tracking-wider">
+                <span className="px-3 py-0.5 rounded-full bg-[#F0F9FF] text-[#0284C7] border border-[#BAE6FD] text-[11px] font-black uppercase tracking-wider">
                   ✦ Different Direction
                 </span>
-                <span className="text-[11px] text-[#6B5E66] truncate">
-                  {recommendations.differentDirection.matchReason}
-                </span>
               </div>
+              <p className="text-[11px] text-[#665760] font-medium italic min-h-[2.5rem]">
+                "{recommendations.differentDirection.matchReason}"
+              </p>
               <ActivityCard
                 activity={recommendations.differentDirection}
                 onSelect={onSelectActivity}
@@ -367,13 +354,13 @@ export const WhatShouldIDoPage = ({
             {/* 3. Wildcard */}
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <span className="px-3 py-1 rounded-full bg-[#FFF0F5] text-[#FF4D8D] text-xs font-black uppercase tracking-wider">
+                <span className="px-3 py-0.5 rounded-full bg-[#FFF1F2] text-[#E11D48] border border-[#FECDD3] text-[11px] font-black uppercase tracking-wider">
                   ⚡ Wildcard
                 </span>
-                <span className="text-[11px] text-[#6B5E66] truncate">
-                  {recommendations.wildcard.matchReason}
-                </span>
               </div>
+              <p className="text-[11px] text-[#665760] font-medium italic min-h-[2.5rem]">
+                "{recommendations.wildcard.matchReason}"
+              </p>
               <ActivityCard
                 activity={recommendations.wildcard}
                 onSelect={onSelectActivity}
